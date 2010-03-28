@@ -1446,6 +1446,9 @@ class gPodder(BuilderWidget, dbus.service.Object):
         finished_downloads = [str(task) for task in download_tasks_seen if task.status == task.DONE]
         failed_downloads = [str(task)+' ('+task.error_message+')' for task in download_tasks_seen if task.status == task.FAILED]
 
+        if self.config.do_not_show_dowloads_finished_dialog:
+            return
+        
         if finished_downloads and failed_downloads:
             message = self.format_episode_list(finished_downloads, 5)
             message += '\n\n<i>%s</i>\n' % _('These downloads failed:')

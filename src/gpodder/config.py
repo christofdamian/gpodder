@@ -137,7 +137,8 @@ gPodderSettings = {
     'do_not_show_new_episodes_dialog': (bool, False,
       ("Do not show the new episodes dialog after updating feed cache when "
         "gPodder is not minimized")),
-
+    'do_not_show_dowloads_finished_dialog': (bool, False,
+      ("Do not show the downloads finished dialog")),
 
     # Settings that are updated directly in code
     'ipod_mount': ( str, '/media/ipod',
