@@ -133,7 +133,7 @@ gPodderSettings = {
     'on_quit_ask': (bool, True,
       ("Ask the user to confirm quitting the application.")),
     'auto_download': (str, 'never',
-      ("Auto download episodes (never, minimized, always)")),
+      ("Auto download episodes (never, minimized, always) - Fremantle also supports 'quiet'")),
     'do_not_show_new_episodes_dialog': (bool, False,
       ("Do not show the new episodes dialog after updating feed cache when "
         "gPodder is not minimized")),
@@ -202,8 +202,6 @@ gPodderSettings = {
     'on_drag_mark_played': (bool, False,
       ("Mark episode as played when using drag'n'drop to copy/open it")),
 
-    'feed_update_skipping': (bool, False,
-      ('Skip podcasts that are unlikely to have new episodes when updating feeds.')),
     'allow_empty_feeds': (bool, True,
       ('Allow subscribing to feeds without episodes')),
 
@@ -227,17 +225,17 @@ gPodderSettings = {
     'youtube_preferred_fmt_id': (int, 18,
       ('The preferred video format that should be downloaded from YouTube.')),
 
-    # my.gpodder.org general settings
+    # gpodder.net general settings
     'mygpo_username': (str, '',
       ("The user's gPodder web services username.")),
     'mygpo_password': (str, '',
       ("The user's gPodder web services password.")),
     'mygpo_enabled': (bool, False,
       ("Synchronize subscriptions with the web service.")),
-    'mygpo_server': (str, 'my.gpodder.org',
+    'mygpo_server': (str, 'gpodder.net',
       ('The hostname of the mygpo server in use.')),
 
-    # my.gpodder.org device-specific settings
+    # gpodder.net device-specific settings
     'mygpo_device_uid': (str, util.get_hostname(),
       ("The UID that is assigned to this installation.")),
     'mygpo_device_caption': (str, _('gPodder on %s') % util.get_hostname(),
@@ -351,6 +349,25 @@ class Config(dict):
     def __atexit(self):
         if self.__save_thread is not None:
             self.save()
+
+    def get_backup(self):
+        """Create a backup of the current settings
+
+        Returns a dictionary with the current settings which can
+        be used with "restore_backup" (see below) to restore the
+        state of the configuration object at a future point in time.
+        """
+        return dict(self)
+
+    def restore_backup(self, backup):
+        """Restore a previously-created backup
+
+        Restore a previously-created configuration backup (created
+        with "get_backup" above) and notify any observer about the
+        changed settings.
+        """
+        for key, value in backup.iteritems():
+            setattr(self, key, value)
 
     def save(self, filename=None):
         if filename is None:

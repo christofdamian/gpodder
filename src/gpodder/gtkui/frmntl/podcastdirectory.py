@@ -17,10 +17,8 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-import os
 import gtk
 import pango
-import urllib
 import threading
 import hildon
 import gobject
@@ -150,7 +148,7 @@ class gPodderPodcastDirectory(BuilderWidget):
                 (_('Example podcasts'), choice_load_examples),
                 (_('Podcast Top 50'), choice_load_toplist),
                 (_('Search YouTube users'), choice_search_youtube),
-                (_('Download from my.gpodder.org'), choice_mygpodder),
+                (_('Download from gpodder.net'), choice_mygpodder),
         )
 
         for caption, handler in choices:

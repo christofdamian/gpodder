@@ -19,8 +19,9 @@
 
 import gtk
 import gtk.gdk
+import gobject
 import pango
-import threading
+import os
 
 from xml.sax import saxutils
 
@@ -28,29 +29,64 @@ import gpodder
 
 _ = gpodder.gettext
 
+from gpodder.liblogger import log
+
 from gpodder import util
 
-from gpodder.gtkui.interface.common import BuilderWidget
 from gpodder.gtkui.interface.shownotes import gPodderShownotesBase
+
+
+SHOWNOTES_HTML_TEMPLATE = """
+<html>
+  <head>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+  </head>
+  <body>
+    <span style="font-size: big; font-weight: bold;">%s</span>
+    <br>
+    <span style="font-size: small;">%s</span>
+    <hr style="border: 1px #eeeeee solid;">
+    <p>%s</p>
+  </body>
+</html>
+"""
 
 class gPodderShownotes(gPodderShownotesBase):
     def on_create_window(self):
         self.textview.modify_bg(gtk.STATE_NORMAL, gtk.gdk.color_parse('#ffffff'))
         if self._config.enable_html_shownotes:
             try:
-                import gtkhtml2
-                setattr(self, 'have_gtkhtml2', True)
-                # Generate a HTML view and remove the textview
-                setattr(self, 'htmlview', gtkhtml2.View())
+                import webkit
+                webview_signals = gobject.signal_list_names(webkit.WebView)
+                if 'navigation-policy-decision-requested' in webview_signals:
+                    setattr(self, 'have_webkit', True)
+                    setattr(self, 'htmlview', webkit.WebView())
+                else:
+                    log('Your WebKit is too old (see bug 1001).', sender=self)
+                    setattr(self, 'have_webkit', False)
+
+                def navigation_policy_decision(wv, fr, req, action, decision):
+                    REASON_LINK_CLICKED, REASON_OTHER = 0, 5
+                    if action.get_reason() == REASON_LINK_CLICKED:
+                        util.open_website(req.get_uri())
+                        decision.ignore()
+                    elif action.get_reason() == REASON_OTHER:
+                        decision.use()
+                    else:
+                        decision.ignore()
+
+                self.htmlview.connect('navigation-policy-decision-requested', \
+                        navigation_policy_decision)
+
                 self.scrolled_window.remove(self.scrolled_window.get_child())
                 self.scrolled_window.add(self.htmlview)
                 self.textview = None
-                self.htmlview.set_document(gtkhtml2.Document())
+                self.htmlview.load_html_string('', '')
                 self.htmlview.show()
             except ImportError:
-                setattr(self, 'have_gtkhtml2', False)
+                setattr(self, 'have_webkit', False)
         else:
-            setattr(self, 'have_gtkhtml2', False)
+            setattr(self, 'have_webkit', False)
 
     def on_scroll_down(self):
         if not hasattr(self.scrolled_window, 'get_vscrollbar'):
@@ -73,13 +109,8 @@ class gPodderShownotes(gPodderShownotesBase):
         self.download_progress.set_text(_('Please wait...'))
         self.main_window.set_title(self.episode.title)
 
-        if self.have_gtkhtml2:
-            import gtkhtml2
-            self.d = gtkhtml2.Document()
-            self.d.open_stream('text/html')
-            self.d.write_stream('<html><head></head><body><em>%s</em></body></html>' % _('Loading shownotes...'))
-            self.d.close_stream()
-            self.htmlview.set_document(self.d)
+        if self.have_webkit:
+            self.htmlview.load_html_string('<html><head></head><body><em>%s</em></body></html>' % _('Loading shownotes...'), '')
         else:
             self.b = gtk.TextBuffer()
             self.textview.set_buffer(self.b)
@@ -90,26 +121,22 @@ class gPodderShownotes(gPodderShownotesBase):
         subheading = 'from %s' % (self.episode.channel.title)
         description = self.episode.description
 
-        if self.have_gtkhtml2:
-            import gtkhtml2
-            self.d.connect('link-clicked', lambda doc, url: util.open_website(url))
-            def request_url(document, url, stream):
-                def opendata(url, stream):
-                    fp = util.urlopen(url)
-                    data = fp.read(1024*10)
-                    while data != '':
-                        stream.write(data)
-                        data = fp.read(1024*10)
-                    stream.close()
-                threading.Thread(target=opendata, args=[url, stream]).start()
-            self.d.connect('request-url', request_url)
-            self.d.clear()
-            self.d.open_stream('text/html')
-            self.d.write_stream('<html><head><meta http-equiv="content-type" content="text/html; charset=utf-8"/></head><body>')
-            self.d.write_stream('<span style="font-size: big; font-weight: bold;">%s</span><br><span style="font-size: small;">%s</span><hr style="border: 1px #eeeeee solid;"><p>' % (saxutils.escape(heading), saxutils.escape(subheading)))
-            self.d.write_stream(self.episode.description)
-            self.d.write_stream('</p></body></html>')
-            self.d.close_stream()
+        if self.have_webkit:
+            global SHOWNOTES_HTML_TEMPLATE
+
+            # Get the description - if it looks like plaintext, replace the
+            # newline characters with line breaks for the HTML view
+            description = self.episode.description
+            if '<' not in description:
+                description = description.replace('\n', '<br>')
+
+            args = (
+                    saxutils.escape(heading),
+                    saxutils.escape(subheading),
+                    description,
+            )
+            url = os.path.dirname(self.episode.channel.url)
+            self.htmlview.load_html_string(SHOWNOTES_HTML_TEMPLATE % args, url)
         else:
             self.b.create_tag('heading', scale=pango.SCALE_LARGE, weight=pango.WEIGHT_BOLD)
             self.b.create_tag('subheading', scale=pango.SCALE_SMALL)
@@ -123,9 +150,8 @@ class gPodderShownotes(gPodderShownotesBase):
 
     def on_hide_window(self):
         self.episode = None
-        if self.have_gtkhtml2:
-            import gtkhtml2
-            self.htmlview.set_document(gtkhtml2.Document())
+        if self.have_webkit:
+            self.htmlview.load_html_string('', '')
         else:
             self.textview.get_buffer().set_text('')
 

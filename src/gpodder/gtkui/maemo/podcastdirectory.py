@@ -17,10 +17,8 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-import os
 import gtk
 import pango
-import urllib
 import threading
 import hildon
 
@@ -125,7 +123,7 @@ class gPodderPodcastDirectory(BuilderWidget):
 
         self.button_cancel.set_sensitive(False)
         banner = hildon.hildon_banner_show_animation(self.main_window, \
-                None, _('Loading podcast list, please wait'))
+                '', _('Loading podcast list, please wait'))
 
         def download_thread_func():
             if use_youtube:

@@ -44,7 +44,6 @@ import re
 import subprocess
 from htmlentitydefs import entitydefs
 import time
-import locale
 import gzip
 import datetime
 import threading
@@ -476,22 +475,16 @@ def format_filesize(bytesize, use_si_units=False, digits=2):
     return ('%.'+str(digits)+'f %s') % (used_value, used_unit)
 
 
-def delete_file( path):
-    """
-    Tries to delete the given filename and silently 
-    ignores deletion errors (if the file doesn't exist).
-    Also deletes extracted cover files if they exist.
-    """
-    log( 'Trying to delete: %s', path)
-    try:
-        os.unlink( path)
-        # Remove any extracted cover art that might exist
-        for cover_file in glob.glob( '%s.cover.*' % ( path, )):
-            os.unlink( cover_file)
+def delete_file(filename):
+    """Delete a file from the filesystem
 
+    Errors (permissions errors or file not found)
+    are silently ignored.
+    """
+    try:
+        os.remove(filename)
     except:
         pass
-
 
 
 def remove_html_tags(html):
@@ -529,10 +522,63 @@ def remove_html_tags(html):
     return result.strip()
 
 
+def wrong_extension(extension):
+    """
+    Determine if a given extension looks like it's
+    wrong (e.g. empty, extremely long or spaces)
+
+    Returns True if the extension most likely is a
+    wrong one and should be replaced.
+
+    >>> wrong_extension('.mp3')
+    False
+    >>> wrong_extension('.divx')
+    False
+    >>> wrong_extension('mp3')
+    True
+    >>> wrong_extension('')
+    True
+    >>> wrong_extension('.12 - Everybody')
+    True
+    >>> wrong_extension('.mp3 ')
+    True
+    >>> wrong_extension('.')
+    True
+    >>> wrong_extension('.42')
+    True
+    """
+    if not extension:
+        return True
+    elif len(extension) > 5:
+        return True
+    elif ' ' in extension:
+        return True
+    elif extension == '.':
+        return True
+    elif not extension.startswith('.'):
+        return True
+    else:
+        try:
+            # ".<number>" is an invalid extension
+            float(extension)
+            return True
+        except:
+            pass
+
+    return False
+
+
 def extension_from_mimetype(mimetype):
     """
     Simply guesses what the file extension should be from the mimetype
     """
+    MIMETYPE_EXTENSIONS = {
+            # This is required for YouTube downloads on Maemo 5
+            'video/x-flv': '.flv',
+            'video/mp4': '.mp4',
+    }
+    if mimetype in MIMETYPE_EXTENSIONS:
+        return MIMETYPE_EXTENSIONS[mimetype]
     return mimetypes.guess_extension(mimetype) or ''
 
 
@@ -811,33 +857,34 @@ def url_add_authentication(url, username, password):
     return urlparse.urlunsplit(url_parts)
 
 
+def urlopen(url):
+    """
+    An URL opener with the User-agent set to gPodder (with version)
+    """
+    username, password = username_password_from_url(url)
+    if username is not None or password is not None:
+        url = url_strip_authentication(url)
+        password_mgr = urllib2.HTTPPasswordMgrWithDefaultRealm()
+        password_mgr.add_password(None, url, username, password)
+        handler = urllib2.HTTPBasicAuthHandler(password_mgr)
+        opener = urllib2.build_opener(handler)
+    else:
+        opener = urllib2.build_opener()
+
+    headers = {'User-agent': gpodder.user_agent}
+    request = urllib2.Request(url, headers=headers)
+    return opener.open(request)
+
 def get_real_url(url):
     """
     Gets the real URL of a file and resolves all redirects.
     """
     try:
-        username, password = username_password_from_url(url)
-        if username or password:
-            url = url_strip_authentication(url)
-            log('url=%s, username=%s, password=%s', url, username, password)
-            password_mgr = urllib2.HTTPPasswordMgrWithDefaultRealm()
-            password_mgr.add_password(None, url, username, password)
-            handler = urllib2.HTTPBasicAuthHandler(password_mgr)
-            opener = urllib2.build_opener(handler)
-            return opener.open(url).geturl()
-        else:
-            return urlopen(url).geturl()
+        return urlopen(url).geturl()
     except:
         log('Error getting real url for %s', url, traceback=True)
         return url
 
-def urlopen(url):
-    """
-    An URL opener with the User-agent set to gPodder (with version)
-    """
-    headers = {'User-agent': gpodder.user_agent}
-    request = urllib2.Request(url, headers=headers)
-    return urllib2.urlopen(request)
 
 def find_command( command):
     """
@@ -1374,4 +1421,21 @@ def get_hostname():
 
     # Fallback - but can this give us "localhost"?
     return socket.gethostname()
+
+def detect_device_type():
+    """Device type detection for gpodder.net
+
+    This function tries to detect on which
+    kind of device gPodder is running on.
+
+    Possible return values:
+    desktop, laptop, mobile, server, other
+    """
+    if gpodder.ui.maemo:
+        return 'mobile'
+    elif glob.glob('/proc/acpi/battery/*'):
+        # Linux: If we have a battery, assume Laptop
+        return 'laptop'
+
+    return 'desktop'
 
